@@ -13,7 +13,7 @@ independent_path = os.path.join(path, "自变量")  #自变量路径
 
 
 ##构造因变量，注意这里市值的单位是千元
-TRD_Cnmont = pd.read_csv(os.path.join(raw_data_path, "TRD_Cnmont" + ".csv"), index_col="Trdmnt")  #月度收益率、市值
+TRD_Cnmont = pd.read_csv(os.path.join(raw_data_path, "TRD_Cnmont.csv"), index_col="Trdmnt")  #月度收益率、市值
 TRD_Cnmont.index = pd.to_datetime(TRD_Cnmont.index)
 TRD_Nrrate = pd.read_csv(
     os.path.join(raw_data_path, "TRD_Nrrate" + ".csv"),
@@ -32,6 +32,8 @@ dependent = pd.DataFrame({
     "dependent2": dependent2
 })
 dependent.to_csv(os.path.join(dependent_path, "dependent.csv"))
+dependent = pd.read_csv(os.path.join('因变量', 'dependent.csv'), index_col=0)
+dependent.index = pd.to_datetime(dependent.index)
 
 ##构造D12，单位为元
 CD_Dividend = pd.read_csv(os.path.join(raw_data_path, "CD_Dividend.csv"), index_col=1).dropna()
@@ -97,6 +99,9 @@ pd.DataFrame(
     index=TRD_Cnmont.index
 ).to_csv(os.path.join(independent_path, "D_E.csv"))
 
+D_E = pd.read_csv(os.path.join('自变量', 'D_E.csv'), index_col=0)
+D_E.index = pd.to_datetime(D_E.index)
+
 
 ##构造D/P，结果为np.array
 D_P = np.log(D12.tolist()) - np.log((TRD_Cnmont["Cmmvttl"] * 1000).tolist())
@@ -104,6 +109,9 @@ pd.DataFrame(
     {"D/P": D_P},
     index=TRD_Cnmont.index
 ).to_csv(os.path.join(independent_path, "D_P.csv"))
+
+D_P = pd.read_csv(os.path.join('自变量', 'D_P.csv'), index_col=0)
+D_P.index = pd.to_datetime(D_P.index)
 
 
 ##构造D/Y，结果为np.array
@@ -114,6 +122,9 @@ pd.DataFrame(
     index=TRD_Cnmont.index
 ).to_csv(os.path.join(independent_path, "D_Y.csv"))
 
+D_Y = pd.read_csv(os.path.join('自变量', 'D_Y.csv'), index_col=0)
+D_Y.index = pd.to_datetime(D_Y.index)
+
 
 ##构造E/P，结果为np.array
 E1_P = np.log(E12) - np.log((TRD_Cnmont["Cmmvttl"] * 1000).tolist())
@@ -122,6 +133,9 @@ pd.DataFrame(
     {"E1/P": E1_P, "E2/P": E2_P},
     index=TRD_Cnmont.index
 ).to_csv(os.path.join(independent_path, "E_P.csv"))
+
+E_P = pd.read_csv(os.path.join('自变量', 'E_P.csv'), index_col=0)
+E_P.index = pd.to_datetime(E_P.index)
 
 
 ##填充账面价值，单位为元
@@ -170,6 +184,9 @@ pd.DataFrame(
     index=TRD_Cnmont.index
 ).to_csv(os.path.join(independent_path, "B_M.csv"))
 
+B_M = pd.read_csv(os.path.join('自变量', 'B_M.csv'), index_col=0)
+B_M.index = pd.to_datetime(B_M.index)
+
 
 ##构造SVAR，结果为np.array，且包含2020年1月的数据
 TRD_Cndalym = pd.read_csv(os.path.join(raw_data_path, "TRD_Cndalym.csv"), index_col="Trddt")
@@ -187,11 +204,18 @@ SVAR = daily_ret.groupby(["year", "month"]).apply(lambda x: (x ** 2).sum())[["re
 SVAR.to_csv(os.path.join(independent_path, "SVAR.csv"))
 SVAR1 = np.array(SVAR["ret1"])
 SVAR2 = np.array(SVAR["ret2"])
+# 把2020年1月的数据删除了再read
+SVAR = pd.read_csv(os.path.join('自变量', 'SVAR.csv'))[['ret1', 'ret2']]
+SVAR.columns = ['SVAR1', 'SVAR2']
+SVAR.index = B_M.index
+
 
 
 ##构造INF，结果为np.array
 INF = pd.read_csv(os.path.join(raw_data_path, "INF.csv"), index_col=0)
-INF = np.array(INF["inflation"].shift(1)[1:]) / 100
+INF.index = pd.to_datetime(INF.index)
+INF = INF.shift(1).dropna() / 100
+INF.columns = ['INF']
 
 
 ##构造新股发行量的移动加总，单位为股，类型为np.array
@@ -217,11 +241,15 @@ full_monthly_IPO = pd.concat(
     join="outer"
 )["IPO_number"].fillna(0)
 pd.DataFrame(full_monthly_IPO).to_csv(os.path.join(independent_path, "IPO.csv"))
-IPO_sum = np.array(full_monthly_IPO.rolling(window=12).sum().loc[datetime(1996, 1, 1):])
+full_monthly_IPO = pd.read_csv(os.path.join('自变量', 'IPO.csv'), index_col=0)
+full_monthly_IPO.index = pd.to_datetime(full_monthly_IPO.index)
+IPO_sum = full_monthly_IPO.rolling(window=12).sum().loc[datetime(1996, 1, 1):]
 
 
 ##构造NTIS，类型为np.array，发行量的单位为股
-NTIS = IPO_sum / np.array(TRD_Cnmont["Cmmvttl"])
+NTIS = IPO_sum.values[0] / TRD_Cnmont["Cmmvttl"].values
+NTIS = pd.Series(NTIS, index=INF.index)
+NTIS.name = 'NTIS'
 
 
 ##构造TO，类型为np.array，总交易量的单位为股
@@ -231,23 +259,27 @@ SZ_volume = TV_Mont[TV_Mont["Markettype"] == 4]
 volume = SH_volume["Mnshrtrdtl"] + SZ_volume["Mnshrtrdtl"]
 pd.DataFrame({"volume": volume}).to_csv(os.path.join(independent_path, "volume.csv"))
 TO = np.array(volume) / np.array(TRD_Cnmont["Cmmvttl"])
+TO = pd.Series(TO, index=INF.index)
+TO.name = 'TO'
 
 
-##构造货币相关的变量，到这里发现只能从1996年2月开始原始数据
+##构造货币相关变量
 CMMPI_Mam = pd.read_csv(os.path.join(raw_data_path, "CMMPI_Mam.csv"), index_col=0)
 M2 = CMMPI_Mam["Mam01"][1:]
 M2G = M2 / M2.shift(1) - 1
-M2G = np.array(M2G.dropna())
+M2G = M2G.dropna()
 M0 = CMMPI_Mam["Mam03"][1:]
 M0G = M0 / M0.shift(1) - 1
-M0G = np.array(M0G.dropna())
+M0G = M0G.dropna()
 M1 = CMMPI_Mam["Mam02"]
 M1G = (M1 / M1.shift(1) - 1).dropna()
-M1G = np.array((M1G - M1G.shift(1)).dropna())
+M1G = (M1G - M1G.shift(1)).dropna()
 pd.DataFrame(
     {"M0G": M0G, "M1G": M1G, "M2G": M2G},
-    index=pd.date_range(start="1996-02-01", end="2019-12", freq="MS")
+    index=pd.date_range(start="1996-01-01", end="2019-11", freq="MS")
 ).to_csv(os.path.join(independent_path, "M.csv"))
+M = pd.read_csv(os.path.join('自变量', 'M.csv'), index_col=0)
+M.index = pd.to_datetime(M.index)
 
 
 ##整合所有变量
@@ -273,6 +305,23 @@ pd.DataFrame(
     },
     index=pd.date_range(start="1996-02-01", end="2019-12-01", freq="MS")
 ).to_csv("all_data.csv")
+pd.concat(
+    [
+        dependent,
+        D_E,
+        D_P,
+        D_Y,
+        E_P,
+        B_M,
+        SVAR,
+        INF,
+        NTIS,
+        TO,
+        M
+    ],
+    axis=1,
+    join='outer'
+).to_csv('all_data.csv')
 
 
 
@@ -289,7 +338,7 @@ from sklearn.cross_decomposition import PLSRegression
 import matplotlib.pyplot as plt
 
 path = os.getcwd()
-merge_data = pd.read_csv(os.path.join(path, "all_data.csv"), index_col=0)
+merge_data = pd.read_csv("all_data.csv", index_col=0)
 merge_data.index = pd.to_datetime(merge_data.index)
 
 combination = {
@@ -310,6 +359,11 @@ out_num = len(out_months)  #样本外月份数
 data1 = merge_data.iloc[:, combination["kind1"]]
 #样本外真实收益
 true_ret = data1.iloc[:, 0].iloc[all_months.index(start_month):]
+# 数据的描述性统计
+Des = data1.describe().T
+Des['自相关系数'] = data1.apply(lambda x: x.corr(x.shift(1)))
+Des.to_excel('描述性统计.xlsx')
+
 
 #找训练集
 def window(data, kind, mon, m=10, w_min=24):
@@ -382,8 +436,8 @@ pd.DataFrame({
 }).to_csv(
     os.path.join(path, "预测结果", "历史均值预测.csv")
 )
-hist_mean1 = pd.read_csv(os.path.join(path, "预测结果", "历史均值预测.csv"), index_col=0)["expanding"]
-hist_mean2 = pd.read_csv(os.path.join(path, "预测结果", "历史均值预测.csv"), index_col=0)["Avew"]
+hist_mean1 = pd.read_csv(os.path.join("预测结果", "历史均值预测.csv"), index_col=0)["expanding"]
+hist_mean2 = pd.read_csv(os.path.join("预测结果", "历史均值预测.csv"), index_col=0)["Avew"]
 
 
 #单变量预测
@@ -465,7 +519,7 @@ def R2_test(prediction, name):
         os.path.join(path, "统计检验", "R方", name)
     )
 
-#R2_test(prediction1, "单变量预测.csv")
+R2_test(prediction1, "单变量预测.csv")
 
 
 
@@ -528,64 +582,6 @@ MR_pre = pd.read_csv(os.path.join(
 ), index_col=0)
 
 
-#forecast combination  (Rapach et al., 2010)
-##combination for one data
-#def FC_i(data):
-    '''
-    FC prediction for one df.
-
-    Patameters
-    ----------
-    data: A given data.  (pd.DataFrame)
-
-    Returns
-    -------
-    FC prediction.  (float)
-    '''
-#    Y = data.iloc[1:, 0]  #return observations
-#    X = data.iloc[:, 1:]  #all data of the 12 variables
-#    variable_i_pre = []
-#    for i in range(len(X.columns)):
-#        model = sm.OLS(Y.values, sm.add_constant(X.iloc[:-1, i].values)).fit()
-#        variable_i_pre.append(model.predict([1, X.iloc[-1, i]])[0])
-    
-#    return np.mean(variable_i_pre)
-
-#def FC(data=data1, kind='expanding', **kwgs):
-    '''
-    Forecasting method.
-    
-    Parameters
-    ----------
-    data: All data of variables.  (pd.DataFrame)
-    kind: Window type.  (str)
-    **kwgs: Parameters for window.
-
-    Returns
-    -------
-    Prediction results.  (pd.Series)
-    '''
-#    all_pred = []
-#    for mon in out_months:
-#        train = window(data=data, mon=mon, kind=kind, **kwgs)
-#        if kind == "expanding":
-#            all_pred.append(FC_i(train))
-#        else:
-#            all_pred.append(np.mean([FC_i(x) for x in train]))
-        
-#    return pd.Series(all_pred, index=out_months)
-
-FC_pre_expanding = linear_pre_expanding.mean(axis=1)
-FC_pre_Avew = linear_pre_Avew.mean(axis=1)
-pd.DataFrame({
-    "expanding": FC_pre_expanding,
-    "Avew": FC_pre_Avew
-}).to_csv(os.path.join(path, "预测结果", "FC.csv"))
-FC_pre = pd.read_csv(os.path.join(
-    path,
-    "预测结果",
-    "FC.csv"
-), index_col=0)
 
 
 
@@ -642,8 +638,6 @@ elasticnet_pre_expanding = linear_prediction(ElasticNetCV(cv=5))
 lars_pre_expanding = linear_prediction(LarsCV(cv=5))
 #五折交叉验证的正交匹配追踪
 omp_pre_expanding = linear_prediction(OrthogonalMatchingPursuitCV(cv=5))
-#PLS
-PLS_pre_expanding = linear_prediction(PLSRegression())
 
 
 #保存结果
@@ -672,7 +666,6 @@ lasso_pre_Avew = linear_prediction(LassoCV(cv=5), window_type="Avew")
 elasticnet_pre_Avew = linear_prediction(ElasticNetCV(cv=5), window_type="Avew")
 lars_pre_Avew = linear_prediction(LarsCV(cv=5), window_type="Avew")
 omp_pre_Avew = linear_prediction(OrthogonalMatchingPursuitCV(cv=5), window_type="Avew")
-PLS_pre_Avew = linear_prediction(PLSRegression(n_components=i), window_type='Avew')
 pd.DataFrame({
     "ridge": ridge_pre_Avew,
     "lasso": lasso_pre_Avew,
@@ -691,18 +684,36 @@ linear_pre_Avew = pd.read_csv(
     index_col=0
 )
 
+FC_pre_expanding = linear_pre_expanding.mean(axis=1)
+FC_pre_Avew = linear_pre_Avew.mean(axis=1)
+pd.DataFrame({
+    "expanding": FC_pre_expanding,
+    "Avew": FC_pre_Avew
+}).to_csv(os.path.join(path, "预测结果", "FC.csv"))
+FC_pre = pd.read_csv(os.path.join(
+    path,
+    "预测结果",
+    "FC.csv"
+), index_col=0)
+
 #综合结果
 ##expanding方式
 linear_pre_expanding["KitchenSink"] = MR_pre["expanding"]
+linear_pre_expanding['FC'] = FC_pre['expanding']
+linear_pre_expanding = linear_pre_expanding[[
+    'KitchenSink',
+    'ridge',
+    'lasso',
+    'elastic net',
+    'lars',
+    'OMP',
+    'FC'
+]]
 linear_pre_expanding.to_csv(os.path.join(
     path,
     "预测结果",
     "expanding方式综合结果.csv"
 ))
-# PLS and FC are added later.
-#all_linear_expanding['PLS'] = PLS_pre_expanding.astype(float)
-#all_linear_expanding['FC'] = FC_pre_expanding
-#all_linear_expanding.to_csv(os.path.join(path, '预测结果', 'expanding方式综合结果.csv'))
 all_linear_expanding = pd.read_csv(
     os.path.join(
         path,
@@ -711,16 +722,24 @@ all_linear_expanding = pd.read_csv(
     ),
     index_col=0
 )
+
 ##Avew方式
 linear_pre_Avew["KitchenSink"] = MR_pre["Avew"]
+linear_pre_Avew['FC'] = FC_pre['Avew']
+linear_pre_Avew = linear_pre_Avew[[
+    'KitchenSink',
+    'ridge',
+    'lasso',
+    'elastic net',
+    'lars',
+    'OMP',
+    'FC'
+]]
 linear_pre_Avew.to_csv(os.path.join(
     path,
     "预测结果",
     "Avew方式综合结果.csv"
 ))
-#all_linear_Avew['PLS'] = PLS_pre_Avew.astype(float)
-#all_linear_Avew['FC'] = FC_pre_Avew
-#all_linear_Avew.to_csv(os.path.join(path, '预测结果', 'Avew方式综合结果.csv'))
 all_linear_Avew = pd.read_csv(
     os.path.join(
         path,
@@ -745,9 +764,16 @@ def DCSFE_plot(prediction):
     prediction_CSFE = (prediction_FE ** 2).cumsum()  #预测模型的累计平方误差
 
     #作图
-    prediction_CSFE.apply(lambda x: hist_mean_CSFE - x).plot(linestyle="dashed")
-    plt.hlines(y=0, xmin=datetime(2002, 1, 1), xmax=datetime(2019, 12, 1))
-    plt.savefig("temp.jpg")
+    temp = prediction_CSFE.apply(lambda x: hist_mean_CSFE - x)
+    for i in range(1, 13):
+        plt.subplot(4, 3, i)
+        plt.plot(temp.index, temp.iloc[:, i - 1], linestyle='dashed')
+        plt.title(temp.columns[i - 1])
+        plt.ylim(-0.1, 0.1)
+        plt.xlim(datetime(2002, 1, 1), xmax=datetime(2019, 12, 1))
+        plt.hlines(y=0, xmin=datetime(2002, 1, 1), xmax=datetime(2019, 12, 1))
+
+DCSFE_plot(prediction1)
 
 
 #expanding方式综合结果的R2
@@ -757,44 +783,26 @@ R2_test(prediction=all_linear_Avew, name="Avew方式综合结果.csv")
 
 
 #和历史平均的组合
-def HA_shrinkage(prediction, factor=0.5, method="EW", theta=0.9):
+def HA_shrinkage(prediction, factor=0.7):
     '''
-    和历史平均预测的组合，使用简单加权平均或者performance-based平均
+    和历史平均预测的组合，使用简单加权平均
 
     Parameters
     ----------
     prediction: 预测结果  (pd.Series)
-    factor: 收缩因子，即预测结果项的系数  (float default 0.5)
-    method: 组合方式  ("EW"代表简单加权平均，"PB"代表performance-baes平均)
-    theta: 使用performance-based方式时的折现因子  (float default 0.9)
+    factor: 收缩因子，即预测结果项的系数  (float default 0.7)
 
     Returns
     -------
     组合之后的预测结果  (pd.Series)
     '''
-    if method == "EW":  #简单加权平均
-        result = prediction * factor + hist_mean1 * (1 - factor)
-
-    elif method == "PB":  #performance-based
-        hist_mean_SFE = (true_ret - hist_mean1) ** 2  #square forecast error
-        prediction_SFE = (true_ret - prediction) ** 2
-        result = []
-        result.append(prediction.iloc[0])  #first prediction without combination
-        for i in range(1, len(prediction)):
-            SFE1 = hist_mean_SFE.iloc[:i]  #slice the SFE
-            SFE2 = prediction_SFE.iloc[:i]
-            weight = [theta ** j for j in range(i - 1, -1, -1)]
-            phi1 = sum(np.array(weight) * SFE1.values)
-            phi2 = sum(np.array(weight) * SFE2.values)
-            w1 = (1/phi1) / (1/phi1 + 1/phi2)
-            w2 = 1 - w1
-            result.append(w1 * hist_mean1.iloc[i] + w2 * hist_mean1.iloc[i])
+    result = prediction * factor + hist_mean1 * (1 - factor)
 
     return result
 
 
 #预测的shrinkage
-all_linear_Avew.apply(HA_shrinkage, factor=0.7).to_csv(
+all_linear_Avew.apply(HA_shrinkage).to_csv(
     os.path.join(
         path,
         "预测结果",
@@ -849,7 +857,7 @@ def CER_and_Sharpe(prediction, gamma=3, weight_bound=[0, 1.5], return_sharpe=Tru
     #weights constrain
     weights.clip(weight_bound[0], weight_bound[1], inplace=True)
     #portfolio return
-    ret = weights * true_ret + (1 - weights) * rf_rate
+    ret = weights * true_ret + rf_rate
     #take costs to account
     ret = ret.apply(lambda x: x * (1 - trans_cost) if x >= 0 else x * (1 + trans_cost))
     #CER
@@ -897,8 +905,10 @@ def save_CER(prediction, name, **kw):
 
 
 #utility gain and Sharpe ratio of shrinkage results
-save_CER(prediction=all_linear_shrinkage, name="无成本.csv", **{"trans_cost": 0})
-save_CER(prediction=all_linear_shrinkage, name="0.5%成本.csv", **{"trans_cost": 0.005})
+save_CER(prediction=all_linear_Avew, name="无成本.csv", **{"trans_cost": 0})
+save_CER(prediction=all_linear_Avew, name="0.5%成本.csv", **{"trans_cost": 0.005})
+save_CER(prediction=all_linear_shrinkage, name="无成本（shrinkage）.csv", **{"trans_cost": 0})
+save_CER(prediction=all_linear_shrinkage, name="0.5%成本（shrinkage）.csv", **{"trans_cost": 0.005})
 
 
 ################encompassing test###############
@@ -966,6 +976,11 @@ def save_encompassing_result(prediction, name):
 #add the historical mean to the prediction
 all_prediction = all_linear_shrinkage.copy()
 all_prediction["HA"] = hist_mean1
+save_encompassing_result(all_prediction, 'shrinkage后.csv')
+
+all_prediction = all_linear_Avew.copy()
+all_prediction['HA'] = hist_mean1
+save_encompassing_result(all_prediction, '不shrinkage.csv')
 
     
 
@@ -987,17 +1002,16 @@ def check_w(w=[12, 24, 36, 48, 60]):
         pre3 = linear_prediction(ElasticNetCV(cv=5), w_min=w_min, window_type="Avew")
         pre4 = linear_prediction(LarsCV(cv=5), w_min=w_min, window_type="Avew")
         pre5 = linear_prediction(OrthogonalMatchingPursuitCV(cv=5), w_min=w_min, window_type="Avew")
-        pre6 = Pool_AVG(w_min=w_min, window_type="Avew")
-        pre7 = MR(w_min=w_min, window_type="Avew")
+        pre6 = MR(w_min=w_min, window_type="Avew")
         all_pre = pd.DataFrame({
+            'Kintchen Sink': pre6,
             "ridge": pre1,
             "lasso": pre2,
             "elasticnet": pre3,
             "lars": pre4,
             "OMP": pre5,
-            "Pool-AVG": pre6,
-            "MR": pre7
         })
+        all_pre['FC'] = all_pre.iloc[:, 1:].mean(axis=1)
         #save the prediction results
         all_pre.to_csv(os.path.join(
             path,
@@ -1010,6 +1024,9 @@ def check_w(w=[12, 24, 36, 48, 60]):
         R2_test(all_pre, name="w_min=" + str(w_min) + ".csv")  #then you need move the result on your own
 
 check_w()
+
+
+
 
 
 #robustness check for shrinkage factor
@@ -1045,3 +1062,86 @@ def check_shrinkage_factor(factors=np.arange(0.6, 1, 0.01)):
 check_shrinkage_factor()
 
 
+######################################################################################################
+############################补充工作###################################
+##################构造技术指标#######################
+# 读取指数价格
+stock_index = pd.read_csv(os.path.join('微调后原始数据', 'Index_price.csv'), index_col=0)
+stock_index.index = pd.to_datetime(stock_index.index)
+
+# 生成技术信号
+def gen_tech(x, s=1, l=9, m=9, MA_=True):
+    '''
+    给定指标（收盘价、交易量等），根据规则生成技术信号
+
+    Parameters
+    ----------
+    x: 给定的指标  (pd.Series)
+    s: 移动平均的短窗口  (int, default is 1)
+    l: 移动平均的长窗口  (int, default is 9)
+    m: 动量规则的参数，表示当前时点前推m天  (int, default is 9)
+    MA: 是根据原始指标还是根据移动平均指标生成  (bool, default is True)
+
+    Returns
+    -------
+    技术信号  (pd.Series)
+    '''
+    if MA_:  # 移动平均规则
+        MA_s = x.rolling(window=s).mean()
+        MA_l = x.rolling(window=l).mean()
+        result = pd.Series(
+            np.where(MA_s > MA_l, 1, 0),
+            index=x.index
+        )
+    else:  
+        result = pd.Series(np.where(x > x.shift(m), 1, 0), index=x.index)
+    
+    return result
+
+# 组合方式
+combination1 = [(1,9), (1,12), (2,9), (2,12), (3,9), (3,12)]
+# 移动平均规则的技术信号
+MA = pd.DataFrame(
+    [gen_tech(stock_index['Index'], s, l) for s, l in combination1],
+    index=['MA' + str(x) for x in combination1]
+).T
+MA = MA[MA.index > datetime(1995, 12, 31)]
+# 动量规则的技术信号
+MOM = pd.DataFrame(
+    [gen_tech(stock_index['Index'], m) for m in [9, 12]],
+    index=['MOM' + str(x) for x in [9, 12]]
+).T
+MOM = MOM[MOM.index > datetime(1995, 12, 31)]
+
+# 读取全A交易量
+Volume = pd.read_csv(os.path.join('微调后原始数据', 'volume.csv'), index_col=0)
+Volume.index = pd.to_datetime(Volume.index)
+# 生成价格哑变量
+D = pd.Series(
+    np.where(stock_index['Index'] >= stock_index['Index'].shift(1), 1, -1),
+    index=Volume.index
+).iloc[1:]
+# 平衡交易量
+OBV = (Volume['volume'].iloc[1:] * D).cumsum()
+# 基于交易量的信号
+VOL = pd.DataFrame(
+    [gen_tech(OBV, s, l) for s, l in combination1],
+    index=['VOL' + str(x) for x in combination1]
+).T
+VOL = VOL[VOL.index > datetime(1995, 12, 31)]
+# 保存技术信号
+pd.concat(
+    [MA, MOM, VOL],
+    axis=1
+).to_csv(os.path.join('自变量', 'TECH.csv'))
+
+###############技术指标预测####################
+TECH_ind = pd.read_csv(os.path.join('自变量', 'TECH.csv'), index_col=0)
+TECH_ind.index = merge_data.index
+data1 = pd.concat([merge_data.iloc[:, 0], TECH_ind], axis=1)
+TECH_pre = single_variable()
+TECH_pre.to_csv(os.path.join('预测结果', '技术指标单变量.csv'))
+TECH_pre = pd.read_csv(os.path.join('预测结果', '技术指标单变量.csv'), index_col=0)
+
+# R2
+R2_test(TECH_pre, "技术指标单变量.csv")
