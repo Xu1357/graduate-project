@@ -334,7 +334,7 @@ import statsmodels.api as sm
 import os
 from scipy import stats
 from sklearn.linear_model import RidgeCV, LassoCV, ElasticNetCV, LarsCV, OrthogonalMatchingPursuitCV
-from sklearn.cross_decomposition import PLSRegression
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
 path = os.getcwd()
@@ -1138,10 +1138,53 @@ pd.concat(
 ###############技术指标预测####################
 TECH_ind = pd.read_csv(os.path.join('自变量', 'TECH.csv'), index_col=0)
 TECH_ind.index = merge_data.index
-data1 = pd.concat([merge_data.iloc[:, 0], TECH_ind], axis=1)
-TECH_pre = single_variable()
+data2 = pd.concat([merge_data.iloc[:, 0], TECH_ind], axis=1)
+TECH_pre = single_variable(data2)
 TECH_pre.to_csv(os.path.join('预测结果', '技术指标单变量.csv'))
 TECH_pre = pd.read_csv(os.path.join('预测结果', '技术指标单变量.csv'), index_col=0)
 
 # R2
 R2_test(TECH_pre, "技术指标单变量.csv")
+
+# 基于PCA的预测
+def PCA_pre(data, maximum=3):
+    '''
+    基于PCA的预测
+    
+    Parameters
+    ----------
+    data: 用于预测的数据集  (pd.DataFrame)
+    maximum: 最大主成分的数量  (int, default is 3)
+
+    Returns
+    -------
+    预测结果  (pd.Series)
+    '''
+    all_pre = []
+    for mon in out_months:
+        train = window(data=data, kind='expanding', mon=mon)  # 估计窗口
+        pca = [PCA(n_components=i).fit_transform(train.iloc[:, 1:]) for i in range(1, maximum + 1)]  # 提取主成分
+        model = [sm.OLS(train.iloc[1:, 0].values, sm.add_constant(X[:-1])).fit() for X in pca]  # 回归
+        adj_R = [x.rsquared_adj for x in model]  # 调整后R2
+        max_pos = np.argmax(adj_R)  # 最优主成分数量（减1）
+        all_pre.append(model[max_pos].predict([1] + list(pca[max_pos][-1]))[0])  # 预测
+    all_pre = pd.Series(all_pre, index=out_months)
+
+    return all_pre
+
+ECON_PCA = PCA_pre(data1)  # 经济变量PCA预测
+TECH_PCA = PCA_pre(data2)  # 技术指标PCA预测
+data3 = pd.concat(
+    [merge_data.iloc[:, 0], data1.iloc[:, 1:], data2.iloc[:, 1:]],
+    axis=1
+)  # 包含所有变量的数据集
+ALL_PCA = PCA_pre(data3, maximum=4)  # 所有指标PCA预测
+# 保存结果
+pd.DataFrame({
+    'ECON': ECON_PCA,
+    'TECH': TECH_PCA,
+    'ALL': ALL_PCA
+}).to_csv(os.path.join('预测结果', 'PCA预测.csv'))
+pca_pre = pd.read_csv(os.path.join('预测结果', 'PCA预测.csv'), index_col=0)
+# PCA预测的R2
+R2_test(pca_pre, 'PCA预测.csv')
